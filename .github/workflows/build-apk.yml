@@ -3,18 +3,23 @@ name: PYMENTOR PRO - Build APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Compilar APK Android
     runs-on: ubuntu-22.04
 
     steps:
+
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
       - name: Instalar herramientas del sistema
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             zip \
@@ -22,52 +27,93 @@ jobs:
             openjdk-17-jdk \
             python3-pip \
             python3-venv \
-            build-essential \
-            libffi-dev \
-            libssl-dev \
             autoconf \
             automake \
+            autopoint \
             libtool \
             pkg-config \
-            zlib1g-dev
+            zlib1g-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libtinfo5 \
+            cmake \
+            libffi-dev \
+            libssl-dev \
+            build-essential \
+            ccache
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Instalar Buildozer y dependencias
+      - name: Instalar Buildozer y python-for-android
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install buildozer
-          pip install cython==0.29.34
+
+          python -m pip install \
+            "cython==0.29.34" \
+            "buildozer==1.5.0" \
+            "python-for-android"
+
+          buildozer --version
+
+          python -m pythonforandroid.toolchain --help
 
       - name: Buscar proyecto
         run: |
           echo "Contenido del repositorio:"
-          find . -maxdepth 3 -type f | sort
+          find . -maxdepth 4 -type f | sort
+
+      - name: Extraer proyecto
+        run: |
+          mkdir -p project
+
+          unzip -o PYMENTOR_PRO_ANDROID_READY.zip -d project
+
+          echo "Contenido de project:"
+          find project -maxdepth 4 -type f | sort
 
       - name: Detectar carpeta del proyecto
         run: |
-          if [ -f "buildozer.spec" ]; then
-            echo "PROJECT_DIR=." >> $GITHUB_ENV
-          elif [ -f "buildozer.spec" ]; then
-            echo "PROJECT_DIR=." >> $GITHUB_ENV
-          else
-            PROJECT_DIR=$(find . -name "buildozer.spec" -printf '%h\n' | head -n 1)
-            if [ -z "$PROJECT_DIR" ]; then
-              echo "ERROR: No se encontró buildozer.spec"
-              exit 1
-            fi
-            echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          PROJECT_DIR=$(find project -name "buildozer.spec" -type f -printf '%h\n' | head -n 1)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: No se encontró buildozer.spec"
+            exit 1
           fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Proyecto encontrado:"
+          echo "$PROJECT_DIR"
 
       - name: Verificar proyecto Python
         run: |
           echo "Proyecto: $PROJECT_DIR"
+
           ls -la "$PROJECT_DIR"
+
           test -f "$PROJECT_DIR/buildozer.spec"
           test -f "$PROJECT_DIR/main.py"
+
+          echo "buildozer.spec encontrado"
+          echo "main.py encontrado"
+
+      - name: Preparar python-for-android
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          mkdir -p .buildozer/android/platform
+
+          if [ ! -d ".buildozer/android/platform/python-for-android" ]; then
+            git clone --depth 1 \
+              https://github.com/kivy/python-for-android.git \
+              .buildozer/android/platform/python-for-android
+          fi
+
+          echo "python-for-android preparado"
+
+          ls -la .buildozer/android/platform/python-for-android
 
       - name: Compilar APK
         working-directory: ${{ env.PROJECT_DIR }}
@@ -77,8 +123,19 @@ jobs:
       - name: Buscar APK
         run: |
           echo "APK generada:"
-          find . -type f -name "*.apk" -print
 
+          find . \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      - name: Guardar APK como Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PYMENTOR-PRO-APK
+          path: "**/*.apk"
+          if-no-files-found: error
+          retention-days: 14
       - name: Guardar APK como Artifact
         uses: actions/upload-artifact@v4
         with:
