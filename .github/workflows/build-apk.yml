@@ -3,14 +3,10 @@ name: PYMENTOR PRO - Build APK
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build:
     name: Compilar APK Android
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
 
     steps:
       - name: Descargar repositorio
@@ -23,114 +19,69 @@ jobs:
             git \
             zip \
             unzip \
-            wget \
-            curl \
+            openjdk-17-jdk \
+            python3-pip \
+            python3-venv \
             build-essential \
-            ccache \
-            autoconf \
-            automake \
-            autopoint \
-            gettext \
-            libtool \
-            libltdl-dev \
-            pkg-config \
-            cmake \
             libffi-dev \
             libssl-dev \
-            zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
-            libtinfo5 \
-            openjdk-17-jdk
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            zlib1g-dev
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
-      - name: Buscar ZIP del proyecto
+      - name: Instalar Buildozer y dependencias
         run: |
-          echo "Archivos encontrados:"
-          find . -maxdepth 2 -type f -print
+          python -m pip install --upgrade pip setuptools wheel
+          pip install buildozer
+          pip install cython==0.29.34
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No se encontró el ZIP del proyecto."
-            exit 1
-          fi
-
-          echo "ZIP encontrado: $ZIP_FILE"
-
-          mkdir -p project
-          unzip -o "$ZIP_FILE" -d project
+      - name: Buscar proyecto
+        run: |
+          echo "Contenido del repositorio:"
+          find . -maxdepth 3 -type f | sort
 
       - name: Detectar carpeta del proyecto
         run: |
-          echo "Buscando main.py..."
-
-          MAIN_FILE=$(find project -type f -name "main.py" | head -n 1)
-
-          if [ -z "$MAIN_FILE" ]; then
-            echo "ERROR: No se encontró main.py"
-            exit 1
+          if [ -f "buildozer.spec" ]; then
+            echo "PROJECT_DIR=." >> $GITHUB_ENV
+          elif [ -f "buildozer.spec" ]; then
+            echo "PROJECT_DIR=." >> $GITHUB_ENV
+          else
+            PROJECT_DIR=$(find . -name "buildozer.spec" -printf '%h\n' | head -n 1)
+            if [ -z "$PROJECT_DIR" ]; then
+              echo "ERROR: No se encontró buildozer.spec"
+              exit 1
+            fi
+            echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
           fi
 
-          PROJECT_DIR=$(dirname "$MAIN_FILE")
-
-          echo "Proyecto encontrado en: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Contenido del proyecto:"
-          find "$PROJECT_DIR" -maxdepth 3 -type f -print
-
-      - name: Instalar Buildozer
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade setuptools wheel
-          python -m pip install buildozer==1.5.0
-          python -m pip install cython==0.29.34
-          python -m pip install legacy-cgi
-
       - name: Verificar proyecto Python
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "Comprobando archivos..."
-
-          test -f main.py
-          test -f buildozer.spec
-
-          echo "Compilando sintaxis Python..."
-          python -m compileall -q .
-
-          echo "Proyecto correcto."
+          echo "Proyecto: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+          test -f "$PROJECT_DIR/buildozer.spec"
+          test -f "$PROJECT_DIR/main.py"
 
       - name: Compilar APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          buildozer android clean
           buildozer -v android debug
 
-      - name: Comprobar APK
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Buscar APK
         run: |
-          echo "Buscando APK..."
-          find bin -type f -name "*.apk" -print
-
-          APK=$(find bin -type f -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No se generó ningún APK."
-            exit 1
-          fi
-
-          echo "APK generado correctamente:"
-          echo "$APK"
+          echo "APK generada:"
+          find . -type f -name "*.apk" -print
 
       - name: Guardar APK como Artifact
         uses: actions/upload-artifact@v4
         with:
           name: PYMENTOR-PRO-APK
-          path: "${{ env.PROJECT_DIR }}/bin/*.apk"
+          path: "**/*.apk"
           if-no-files-found: error
-          retention-days: 14
